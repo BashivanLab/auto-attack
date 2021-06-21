@@ -74,7 +74,7 @@ class AutoAttack():
         else:
             return self.model.predict(x)
     
-    def get_seed(self):
+    def get_seed(self): 
         return time.time() if self.seed is None else self.seed
     
     def run_standard_evaluation(self, x_orig, y_orig, bs=250):
