@@ -14,10 +14,13 @@ import torch.nn.functional as F
 
     
 class APGDAttack():
-    def __init__(self, model, n_iter=100, norm='Linf', n_restarts=1, eps=None,
+    def __init__(self, model, dapert=False, da_model=None, da_loss=None, n_iter=100, norm='Linf', n_restarts=1, eps=None,
                  seed=0, loss='ce', eot_iter=1, rho=.75, verbose=False,
                  device='cuda'):
         self.model = model
+        self.dapert = dapert
+        self.da_model = da_model
+        self.da_loss = da_loss        
         self.n_iter = n_iter
         self.eps = eps
         self.norm = norm
@@ -45,6 +48,13 @@ class APGDAttack():
         
         return -(x[np.arange(x.shape[0]), y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (1. - ind)) / (x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
     
+    def augment_loss(self, x_adv, y, loss_indiv, loss):
+        da_logits = self.da_model(x_adv)
+        current_da_loss = self.da_loss(da_logits, y, mean=False).squeeze(-1)
+        loss_indiv = loss_indiv + current_da_loss
+        loss = loss + current_da_loss.sum()
+        return loss_indiv, loss
+
     def attack_single_run(self, x_in, y_in):
         x = x_in.clone() if len(x_in.shape) == 4 else x_in.clone().unsqueeze(0)
         y = y_in.clone() if len(y_in.shape) == 1 else y_in.clone().unsqueeze(0)
@@ -67,7 +77,7 @@ class APGDAttack():
         acc_steps = torch.zeros_like(loss_best_steps)
         
         if self.loss == 'ce':
-            criterion_indiv = nn.CrossEntropyLoss(reduce=False, reduction='none')
+            criterion_indiv = nn.CrossEntropyLoss(reduction='none')
         elif self.loss == 'dlr':
             criterion_indiv = self.dlr_loss
         else:
@@ -80,7 +90,8 @@ class APGDAttack():
                 logits = self.model(x_adv) # 1 forward pass (eot_iter = 1)
                 loss_indiv = criterion_indiv(logits, y)
                 loss = loss_indiv.sum()
-                    
+                if self.dapert:
+                    loss_indiv, loss = self.augment_loss(x_adv, y, loss_indiv, loss)
             grad += torch.autograd.grad(loss, [x_adv])[0].detach() # 1 backward pass (eot_iter = 1)
             
         grad /= float(self.eot_iter)
@@ -133,7 +144,8 @@ class APGDAttack():
                     logits = self.model(x_adv) # 1 forward pass (eot_iter = 1)
                     loss_indiv = criterion_indiv(logits, y)
                     loss = loss_indiv.sum()
-                
+                    if self.dapert:
+                        loss_indiv, loss = self.augment_loss(x_adv, y, loss_indiv, loss)
                 grad += torch.autograd.grad(loss, [x_adv])[0].detach() # 1 backward pass (eot_iter = 1)
                 
             
