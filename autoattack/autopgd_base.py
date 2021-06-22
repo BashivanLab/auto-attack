@@ -105,6 +105,9 @@ class APGDAttack():
     def __init__(
             self,
             predict,
+            dapert=False, 
+            da_model=None, 
+            da_loss=None, 
             n_iter=100,
             norm='Linf',
             n_restarts=1,
@@ -123,6 +126,9 @@ class APGDAttack():
         """
         
         self.model = predict
+        self.dapert = dapert
+        self.da_model = da_model
+        self.da_loss = da_loss    
         self.n_iter = n_iter
         self.eps = eps
         self.norm = norm
@@ -203,7 +209,12 @@ class APGDAttack():
         return -(x[u, y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (
             1. - ind)) / (x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
 
-    #
+    def augment_loss(self, x_adv, y, loss_indiv, loss):
+        da_logits = self.da_model(x_adv)
+        current_da_loss = self.da_loss(da_logits, y, mean=False).squeeze(-1)
+        loss_indiv = loss_indiv + current_da_loss
+        loss = loss + current_da_loss.sum()
+        return loss_indiv, loss
     
     def attack_single_run(self, x, y, x_init=None):
         if len(x.shape) < self.ndims:
@@ -276,6 +287,8 @@ class APGDAttack():
                     logits = self.model(x_adv)
                     loss_indiv = criterion_indiv(logits, y)
                     loss = loss_indiv.sum()
+                    if self.dapert:
+                        loss_indiv, loss = self.augment_loss(x_adv, y, loss_indiv, loss)
 
                 grad += torch.autograd.grad(loss, [x_adv])[0].detach()
             else:
@@ -372,6 +385,8 @@ class APGDAttack():
                         logits = self.model(x_adv)
                         loss_indiv = criterion_indiv(logits, y)
                         loss = loss_indiv.sum()
+                        if self.dapert:
+                            loss_indiv, loss = self.augment_loss(x_adv, y, loss_indiv, loss)
     
                     grad += torch.autograd.grad(loss, [x_adv])[0].detach()
                 else:
