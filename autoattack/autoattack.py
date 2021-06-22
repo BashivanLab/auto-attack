@@ -29,7 +29,7 @@ class AutoAttack():
         self.logger = Logger(log_path)
         
         if not self.is_tf_model:
-            from .autopgd_base import APGDAttack
+            from .autopgd_pt import APGDAttack
             self.apgd = APGDAttack(self.model, dapert=self.dapert, da_model=self.da_model, 
                 da_loss=self.da_loss, n_restarts=5, n_iter=self.n_iter, verbose=False,
                 eps=self.epsilon, norm=self.norm, eot_iter=1, rho=.75, seed=self.seed, device=self.device)
